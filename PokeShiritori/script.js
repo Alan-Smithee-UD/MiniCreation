@@ -5,12 +5,17 @@ let previous = null;
 
 function sendInput() {
     const input = inputBox.value;
+    const inputLastChar = getLastChar(input);
     // 入力値そのものが問題ないかを判定
     if (!list.includes(input)) {
         alert('そのようなポケモンは存在しないか、使用済みです');
         return
     }
-    const inputLastChar = getLastChar(input);
+    if (inputLastChar === 'ン') {
+        alert('ンで終わるポケモンです');
+        return
+    }
+
     // 入力値が直前の値としりとり成立しているか判定
     if (previous) {
         const inputFirstChar = input.charAt(0);
@@ -31,6 +36,7 @@ function sendInput() {
     const next = getNextPoke(inputLastChar);
     if (!next) {
         alert('候補がない、またはンがつくポケモンしかいません。\n降参です');
+        return;
     }
     history.innerText = `ＡＩ：${next}\n↑\n${history.innerText}\n`;
     previous = next;
