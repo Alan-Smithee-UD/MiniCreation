@@ -1,0 +1,40 @@
+body {
+    font-family: Arial, sans-serif;
+    padding: 20px;
+    max-width: 600px;
+    margin: auto;
+    text-align: center;
+}
+
+textarea {
+    width: 100%;
+    padding: 5px;
+    font-size: 16px;
+    resize: none; /* ユーザーによるリサイズを禁止 */
+}
+
+/* 入力エリアを小さく */
+#inputText {
+    height: 40px; /* 小さめに設定 */
+}
+
+/* 出力エリアを縦長に */
+#outputText {
+    height: 500px; /* 20行程度の高さ */
+}
+
+
+button {
+    padding: 10px 15px;
+    margin: 5px;
+    cursor: pointer;
+    font-size: 16px;
+    border: none;
+    background-color: #007bff;
+    color: white;
+    border-radius: 5px;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
