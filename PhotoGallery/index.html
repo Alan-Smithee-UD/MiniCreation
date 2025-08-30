@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>フォトギャラリー</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>My Photo Gallery</h1>
+            <p>撮影した写真のコレクション</p>
+        </div>
+    </header>
+
+    <main>
+        <div class="container">
+            <!-- 検索セクション -->
+            <div class="search-section">
+                <div class="search-container">
+                    <input type="text" id="searchInput" placeholder="写真を検索... (タイトル、説明、被写体)">
+                    <button id="searchBtn" class="search-btn">🔍</button>
+                    <button id="clearBtn" class="clear-btn">✕</button>
+                </div>
+                <div class="filter-tags" id="filterTags"></div>
+                <div class="search-results" id="searchResults"></div>
+            </div>
+            
+            <div class="gallery-grid" id="gallery">
+                <!-- 写真はJavaScriptで動的に読み込み -->
+            </div>
+        </div>
+    </main>
+
+    <!-- モーダル表示用 -->
+    <div class="modal" id="imageModal">
+        <span class="close">&times;</span>
+        <img class="modal-content" id="modalImg">
+        <div class="modal-caption" id="modalCaption"></div>
+        <div class="modal-nav">
+            <button class="nav-btn prev-btn" id="prevBtn">&#10094;</button>
+            <button class="nav-btn next-btn" id="nextBtn">&#10095;</button>
+        </div>
+    </div>
+
+    <footer>
+        <div class="container">
+            <p>&copy; Studio Alpha Ace. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
