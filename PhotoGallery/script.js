@@ -9,15 +9,34 @@ document.addEventListener('DOMContentLoaded', function() {
     setupModal();
 });
 
-// CSVから写真データを読み込み（Shift_JIS対応）
+// CSVから写真データを読み込み（Shift_JIS対応 - 改良版）
 async function loadPhotosFromCSV() {
     try {
         const response = await fetch('data/csv/information.csv');
-        const arrayBuffer = await response.arrayBuffer();
         
-        // Shift_JISをUTF-8にデコード
-        const decoder = new TextDecoder('shift_jis');
-        const csvText = decoder.decode(arrayBuffer);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const arrayBuffer = await response.arrayBuffer();
+        let csvText;
+        
+        // まずShift_JISで試行
+        try {
+            const decoder = new TextDecoder('shift_jis');
+            csvText = decoder.decode(arrayBuffer);
+            
+            // 文字化けチェック（疑問符が多い場合は文字化けの可能性）
+            const questionMarks = (csvText.match(/\?/g) || []).length;
+            if (questionMarks > csvText.length * 0.1) {
+                throw new Error('Shift_JIS decoding failed');
+            }
+        } catch (sjisError) {
+            console.warn('Shift_JIS読み込みに失敗、UTF-8で再試行:', sjisError);
+            // UTF-8で再試行
+            const utf8Decoder = new TextDecoder('utf-8');
+            csvText = utf8Decoder.decode(arrayBuffer);
+        }
         
         // CSVをパース
         const lines = csvText.trim().split('\n');
@@ -32,9 +51,16 @@ async function loadPhotosFromCSV() {
                 photo[header] = values[index] || '';
             });
             
-            // パスを修正（data/images/からの相対パス）
+            // パスを修正とサムネイルパス生成
             if (photo.src && !photo.src.startsWith('data/images/')) {
                 photo.src = 'data/images/' + photo.src;
+            }
+            
+            // サムネイル用パスを生成（拡張子を.jpgに変更）
+            if (photo.src) {
+                const filename = photo.src.split('/').pop(); // ファイル名を取得
+                const nameWithoutExt = filename.split('.')[0]; // 拡張子を除去
+                photo.thumbnail = `data/images/thumbnail/${nameWithoutExt}.jpg`;
             }
             
             photos.push(photo);
@@ -195,7 +221,7 @@ function clearSearch() {
     displayPhotos(photos);
 }
 
-// 写真を表示（検索結果対応）
+// 写真を表示（検索結果対応・サムネイル使用）
 function displayPhotos(photosToDisplay) {
     const gallery = document.getElementById('gallery');
     gallery.innerHTML = '';
@@ -215,8 +241,11 @@ function displayPhotos(photosToDisplay) {
         photoItem.className = 'photo-item';
         photoItem.setAttribute('data-index', photos.indexOf(photo)); // 元の配列のインデックス
         
+        // サムネイル画像を使用、フォールバックでオリジナル画像
+        const thumbnailSrc = photo.thumbnail || photo.src;
+        
         photoItem.innerHTML = `
-            <img src="${photo.src}" alt="${photo.title}" loading="lazy">
+            <img src="${thumbnailSrc}" alt="${photo.title}" loading="lazy" onerror="this.src='${photo.src}'; this.classList.add('fallback-image');">
             <div class="photo-overlay">
                 <div class="photo-title">${photo.title}</div>
                 <div class="photo-description">${photo.description}</div>
@@ -323,7 +352,7 @@ function closeModal() {
     document.body.style.overflow = 'auto'; // スクロールを有効化
 }
 
-// 指定された画像を表示
+// 指定された画像を表示（フルサイズ画像使用）
 function showImage(index) {
     const modalImg = document.getElementById('modalImg');
     const modalCaption = document.getElementById('modalCaption');
@@ -331,9 +360,25 @@ function showImage(index) {
     const nextBtn = document.getElementById('nextBtn');
     
     const photo = photos[index];
+    
+    // モーダルではフルサイズ画像を使用
     modalImg.src = photo.src;
     modalImg.alt = photo.title;
-    modalCaption.innerHTML = `<strong>${photo.title}</strong><br>${photo.description}`;
+    modalCaption.innerHTML = `<strong>${photo.title}</strong><br>${photo.description}<br><em>${photo.subject || ''}</em>`;
+    
+    // ローディング状態を表示
+    modalImg.style.opacity = '0';
+    
+    // 画像読み込み完了時の処理
+    modalImg.onload = function() {
+        modalImg.style.opacity = '1';
+    };
+    
+    // 画像読み込みエラー時の処理
+    modalImg.onerror = function() {
+        modalCaption.innerHTML += '<br><span style="color: #ff6b6b;">フルサイズ画像の読み込みに失敗しました</span>';
+        modalImg.style.opacity = '1';
+    };
     
     // ナビゲーションボタンの状態を更新
     prevBtn.disabled = index === 0;
@@ -356,14 +401,18 @@ function showNextImage() {
     }
 }
 
-// 画像読み込みエラーハンドリング
+// 画像読み込みエラーハンドリング（サムネイル対応）
 document.addEventListener('error', function(e) {
-    if (e.target.tagName === 'IMG') {
+    if (e.target.tagName === 'IMG' && !e.target.classList.contains('fallback-image')) {
+        // サムネイル読み込み失敗時の処理は onerror 属性で処理済み
+        console.warn('サムネイル画像の読み込みに失敗、オリジナル画像にフォールバック:', e.target.src);
+    } else if (e.target.tagName === 'IMG' && e.target.classList.contains('fallback-image')) {
+        // オリジナル画像も読み込み失敗の場合
         e.target.style.display = 'none';
         const photoItem = e.target.closest('.photo-item');
         if (photoItem) {
             photoItem.innerHTML = `
-                <div style="padding: 40px; text-align: center; color: #666;">
+                <div style="padding: 40px; text-align: center; color: #666; background: rgba(255,255,255,0.9); border-radius: 15px;">
                     <div style="font-size: 2rem; margin-bottom: 10px;">📷</div>
                     <div>画像を読み込めませんでした</div>
                 </div>
