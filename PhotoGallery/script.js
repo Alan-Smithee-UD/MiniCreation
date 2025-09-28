@@ -243,18 +243,25 @@ function setupIntersectionObserver() {
     };
     
     intersectionObserver = new IntersectionObserver((entries) => {
-        entries.forEach((entry) => {
+        console.log('IntersectionObserver コールバック実行, entries数:', entries.length);
+        entries.forEach((entry, index) => {
+            console.log(`Entry ${index}: isIntersecting=${entry.isIntersecting}, target=`, entry.target);
+            
             if (entry.isIntersecting) {
                 const img = entry.target.querySelector('img[data-src]');
+                console.log('画像要素:', img);
                 
                 if (img && img.dataset.src) {
                     const imageSrc = img.dataset.src;
+                    console.log('画像src:', imageSrc, 'already loaded:', loadedImages.has(imageSrc));
                     
                     if (!loadedImages.has(imageSrc)) {
                         console.log('画像読み込み開始:', imageSrc);
                         loadImage(img);
                         loadedImages.add(imageSrc);
                     }
+                } else {
+                    console.warn('data-src属性を持つimg要素が見つかりません');
                 }
                 
                 // 要素にアニメーション追加
@@ -271,11 +278,17 @@ function loadImage(img) {
     const thumbnailSrc = img.dataset.src;  // サムネイル画像
     const fullSrc = img.dataset.fullSrc;   // フルサイズ画像
     
-    console.log('Loading thumbnail:', thumbnailSrc);
+    console.log('loadImage関数実行:', {
+        thumbnailSrc,
+        fullSrc,
+        imgElement: img,
+        currentSrc: img.src
+    });
     
     // まずサムネイル画像を読み込み
     img.src = thumbnailSrc;
     img.removeAttribute('data-src');
+    console.log('img.srcを設定しました:', img.src);
     
     img.onload = function() {
         img.classList.add('loaded');
@@ -291,10 +304,12 @@ function loadImage(img) {
     
     img.onerror = function() {
         console.warn('サムネイル読み込み失敗、フルサイズにフォールバック:', thumbnailSrc);
+        console.log('フォールバック先:', fullSrc);
         // サムネイル読み込み失敗時はフルサイズにフォールバック
         if (fullSrc && img.src !== fullSrc) {
             img.src = fullSrc;
             img.classList.add('fallback-image');
+            console.log('フォールバック画像を設定:', fullSrc);
         }
     };
 }
@@ -371,8 +386,16 @@ function performSearch() {
     const searchResults = document.getElementById('searchResults');
     
     if (!query) {
+        // 検索クリア時の処理
+        console.log('検索クリア: 全写真表示に戻す');
+        loadedImages.clear(); // 読み込み状態をリセット
         displayPhotos(photos);
         searchResults.textContent = '';
+        
+        // 確実に画像を表示するためのフォールバック
+        setTimeout(() => {
+            forceImageLoad();
+        }, 100);
         return;
     }
     
@@ -394,6 +417,57 @@ function performSearch() {
     } else {
         searchResults.textContent = `${filteredPhotos.length}件の写真が見つかりました。`;
     }
+    
+    // 検索後に画像読み込みを強制実行（フォールバック）
+    setTimeout(() => {
+        forceImageLoad();
+    }, 100);
+}
+
+// 画像読み込みを強制実行（検索後のフォールバック）
+function forceImageLoad() {
+    const gallery = document.getElementById('gallery');
+    const unloadedImages = gallery.querySelectorAll('img[data-src]');
+    
+    console.log('未読み込み画像数:', unloadedImages.length);
+    console.log('未読み込み画像一覧:', Array.from(unloadedImages).map(img => ({
+        dataSrc: img.dataset.src,
+        dataFullSrc: img.dataset.fullSrc,
+        currentSrc: img.src
+    })));
+    
+    unloadedImages.forEach((img, index) => {
+        // 画面に表示されている画像を優先的に読み込み
+        const rect = img.getBoundingClientRect();
+        const isVisible = rect.top < window.innerHeight && rect.bottom > 0;
+        
+        console.log(`画像${index}: visible=${isVisible}, rect=`, rect);
+        
+        if (isVisible || index < BATCH_SIZE) {
+            const imageSrc = img.dataset.src;
+            console.log(`フォールバック処理対象: ${imageSrc}, 既読込み: ${loadedImages.has(imageSrc)}`);
+            
+            if (!loadedImages.has(imageSrc)) {
+                console.log('フォールバック画像読み込み:', imageSrc);
+                loadImage(img);
+                loadedImages.add(imageSrc);
+            }
+        }
+    });
+    
+    // すべての画像に対してすぐに読み込みを実行する緊急フォールバック
+    setTimeout(() => {
+        const stillUnloaded = gallery.querySelectorAll('img[data-src]');
+        if (stillUnloaded.length > 0) {
+            console.log('緊急フォールバック実行、残り未読み込み画像:', stillUnloaded.length);
+            stillUnloaded.forEach(img => {
+                if (img.dataset.src) {
+                    console.log('緊急読み込み:', img.dataset.src);
+                    loadImage(img);
+                }
+            });
+        }
+    }, 500);
 }
 
 // 検索をクリア
@@ -409,6 +483,10 @@ function clearSearch() {
         tag.classList.remove('active');
     });
     
+    // 検索クリア時に読み込み状態をリセット
+    console.log('検索クリア: 読み込み状態をリセット');
+    loadedImages.clear();
+    
     displayPhotos(photos);
 }
 
@@ -418,6 +496,9 @@ function displayPhotos(photosToDisplay) {
     gallery.innerHTML = '';
     visiblePhotos = photosToDisplay;
     
+    // 既存のスクロールイベントをクリア
+    window.removeEventListener('scroll', window.currentScrollHandler);
+    
     if (photosToDisplay.length === 0) {
         gallery.innerHTML = `
             <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: white;">
@@ -426,6 +507,28 @@ function displayPhotos(photosToDisplay) {
             </div>
         `;
         return;
+    }
+    
+    // Intersection Observerがない場合は再作成
+    if (!intersectionObserver) {
+        setupIntersectionObserver();
+    }
+    
+    // 表示する写真が変更された場合、関連する読み込み状態をクリア
+    const displayingPaths = new Set(photosToDisplay.map(p => p.thumbnail || p.src));
+    const loadedPaths = Array.from(loadedImages);
+    let shouldClearLoadedImages = false;
+    
+    // 現在表示予定の写真のパスと、読み込み済みパスが大幅に異なる場合はリセット
+    displayingPaths.forEach(path => {
+        if (!loadedImages.has(path)) {
+            shouldClearLoadedImages = true;
+        }
+    });
+    
+    if (shouldClearLoadedImages) {
+        console.log('表示写真変更によりloadedImagesをリセット');
+        loadedImages.clear();
     }
     
     // バッチ処理で表示
@@ -463,15 +566,20 @@ function displayBatch(startIndex, endIndex) {
         // クリックイベントを追加
         photoItem.addEventListener('click', () => openModal(photos.indexOf(photo)));
         
-        // Intersection Observer に登録
-        if (intersectionObserver) {
-            intersectionObserver.observe(photoItem);
-        }
-        
         fragment.appendChild(photoItem);
     }
     
     gallery.appendChild(fragment);
+    
+    // 新しく追加された要素をIntersection Observerに登録
+    if (intersectionObserver) {
+        const newPhotoItems = gallery.querySelectorAll('.photo-item:not([data-observed])');
+        newPhotoItems.forEach(item => {
+            item.setAttribute('data-observed', 'true');
+            intersectionObserver.observe(item);
+            console.log('新しい要素をIntersection Observerに登録:', item);
+        });
+    }
 }
 
 // 無限スクロール設定
@@ -504,6 +612,12 @@ function setupInfiniteScroll() {
         }
     }, 200);
     
+    // 既存のハンドラを削除してから新しいハンドラを追加
+    if (window.currentScrollHandler) {
+        window.removeEventListener('scroll', window.currentScrollHandler);
+    }
+    
+    window.currentScrollHandler = scrollHandler;
     window.addEventListener('scroll', scrollHandler);
 }
 
